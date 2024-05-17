@@ -37,6 +37,10 @@ impl Timer {
         }
     }
 
+    pub fn remaining_fraction(&self) -> f32 {
+        self.remaining / self.total
+    }
+
     pub fn tick(&mut self, delta: f32) {
         if !self.paused {
             self.remaining -= delta;
@@ -78,17 +82,45 @@ impl GameState {
             }
         }
 
-        self.enemies = enemies;
-
         self.enemy_spawner.timer.tick(delta);
         if self.enemy_spawner.timer.has_just_finished() {
-            self.enemies.push(Enemy {
+            enemies.push(Enemy {
                 hp: HitPoints::new_full(self.enemy_spawner.maximum_hp),
                 damage: self.enemy_spawner.damage,
                 speed: self.enemy_spawner.speed,
                 distance: Distance::start(),
             })
         }
+
+        self.excellency.basic_attack.cooldown_timer.tick(delta);
+        if self
+            .excellency
+            .basic_attack
+            .cooldown_timer
+            .has_just_finished()
+        {
+            let mut targets_hit = 0;
+            enemies = enemies
+                .into_iter()
+                .filter_map(|mut enemy| {
+                    if targets_hit >= self.excellency.basic_attack.max_targets {
+                        return Some(enemy);
+                    }
+                    if enemy.distance.0 <= self.excellency.basic_attack.range {
+                        enemy.hp.take_damage(self.excellency.basic_attack.damage);
+                        targets_hit += 1;
+                        if enemy.hp.current <= 0. {
+                            return None;
+                        } else {
+                            return Some(enemy);
+                        }
+                    }
+                    Some(enemy)
+                })
+                .collect();
+        }
+
+        self.enemies = enemies;
 
         self.enemies.sort_by(|a, b| {
             a.distance
@@ -101,6 +133,15 @@ impl GameState {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Excellency {
     hp: HitPoints,
+    basic_attack: BasicAttack,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct BasicAttack {
+    cooldown_timer: Timer,
+    damage: f32,
+    range: f32,
+    max_targets: usize,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -173,6 +214,12 @@ impl Default for GameState {
         Self {
             excellency: Excellency {
                 hp: HitPoints::new_full(100.),
+                basic_attack: BasicAttack {
+                    cooldown_timer: Timer::new(2.),
+                    damage: 4.,
+                    range: 35.,
+                    max_targets: 3,
+                },
             },
             enemy_spawner: EnemySpawner {
                 timer: Timer::new(1.),
@@ -264,6 +311,42 @@ impl eframe::App for GameState {
             if ui.button("Reset HP").clicked() {
                 self.excellency.hp.reset()
             }
+            ui.separator();
+            ui.heading("Basic Attack");
+            ui.horizontal(|ui| {
+                ui.label("Cooldown:");
+                ui.add(
+                    egui::ProgressBar::new(
+                        self.excellency
+                            .basic_attack
+                            .cooldown_timer
+                            .remaining_fraction(),
+                    )
+                    .show_percentage()
+                    .fill(Color32::DARK_BLUE),
+                )
+            });
+            ui.horizontal(|ui| {
+                ui.label("Damage:");
+                ui.add(egui::Slider::new(
+                    &mut self.excellency.basic_attack.damage,
+                    1. ..=100.,
+                ));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Range:");
+                ui.add(egui::Slider::new(
+                    &mut self.excellency.basic_attack.range,
+                    1. ..=50.,
+                ));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Max Targets:");
+                ui.add(egui::Slider::new(
+                    &mut self.excellency.basic_attack.max_targets,
+                    1..=10,
+                ));
+            });
         });
 
         ctx.request_repaint_after(std::time::Duration::from_millis(16)) // ~60fps
