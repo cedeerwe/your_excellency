@@ -92,6 +92,12 @@ impl GameState {
             })
         }
 
+        enemies.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .expect("Compared two f32's")
+        });
+
         self.excellency.basic_attack.cooldown_timer.tick(delta);
         if self
             .excellency
@@ -120,13 +126,35 @@ impl GameState {
                 .collect();
         }
 
-        self.enemies = enemies;
+        self.excellency.big_attack.cooldown_timer.tick(delta);
+        if self
+            .excellency
+            .big_attack
+            .cooldown_timer
+            .has_just_finished()
+        {
+            let mut targets_hit = 0;
+            enemies = enemies
+                .into_iter()
+                .filter_map(|mut enemy| {
+                    if targets_hit >= self.excellency.big_attack.max_targets {
+                        return Some(enemy);
+                    }
+                    if enemy.distance.0 <= self.excellency.big_attack.range {
+                        enemy.hp.take_damage(self.excellency.big_attack.damage);
+                        targets_hit += 1;
+                        if enemy.hp.current <= 0. {
+                            return None;
+                        } else {
+                            return Some(enemy);
+                        }
+                    }
+                    Some(enemy)
+                })
+                .collect();
+        }
 
-        self.enemies.sort_by(|a, b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .expect("Compared two f32's")
-        })
+        self.enemies = enemies;
     }
 }
 
@@ -134,6 +162,7 @@ impl GameState {
 struct Excellency {
     hp: HitPoints,
     basic_attack: BasicAttack,
+    big_attack: BasicAttack,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -219,6 +248,12 @@ impl Default for GameState {
                     damage: 4.,
                     range: 35.,
                     max_targets: 3,
+                },
+                big_attack: BasicAttack {
+                    cooldown_timer: Timer::new(10.),
+                    damage: 30.,
+                    range: 20.,
+                    max_targets: 10,
                 },
             },
             enemy_spawner: EnemySpawner {
@@ -322,7 +357,11 @@ impl eframe::App for GameState {
                             .cooldown_timer
                             .remaining_fraction(),
                     )
-                    .show_percentage()
+                    .text(format!(
+                        "{:.1}s / {:.1}s",
+                        self.excellency.basic_attack.cooldown_timer.remaining,
+                        self.excellency.basic_attack.cooldown_timer.total
+                    ))
                     .fill(Color32::DARK_BLUE),
                 )
             });
@@ -344,6 +383,47 @@ impl eframe::App for GameState {
                 ui.label("Max Targets:");
                 ui.add(egui::Slider::new(
                     &mut self.excellency.basic_attack.max_targets,
+                    1..=10,
+                ));
+            });
+
+            ui.separator();
+            ui.heading("Big Attack");
+            ui.horizontal(|ui| {
+                ui.label("Cooldown:");
+                ui.add(
+                    egui::ProgressBar::new(
+                        self.excellency
+                            .big_attack
+                            .cooldown_timer
+                            .remaining_fraction(),
+                    )
+                    .text(format!(
+                        "{:.1}s / {:.1}s",
+                        self.excellency.big_attack.cooldown_timer.remaining,
+                        self.excellency.big_attack.cooldown_timer.total
+                    ))
+                    .fill(Color32::DARK_BLUE),
+                )
+            });
+            ui.horizontal(|ui| {
+                ui.label("Damage:");
+                ui.add(egui::Slider::new(
+                    &mut self.excellency.big_attack.damage,
+                    1. ..=100.,
+                ));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Range:");
+                ui.add(egui::Slider::new(
+                    &mut self.excellency.big_attack.range,
+                    1. ..=50.,
+                ));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Max Targets:");
+                ui.add(egui::Slider::new(
+                    &mut self.excellency.big_attack.max_targets,
                     1..=10,
                 ));
             });
