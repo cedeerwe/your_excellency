@@ -1,4 +1,4 @@
-use egui::Color32;
+use egui::{Color32, Pos2, Sense};
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -425,6 +425,20 @@ impl eframe::App for GameState {
                 ui.add(egui::Slider::new(
                     &mut self.excellency.big_attack.max_targets,
                     1..=10,
+                ));
+            });
+
+            // TODO: Sense?
+            let (_, painter) = ui.allocate_painter(ui.available_size(), Sense::hover());
+
+            self.enemies.iter().for_each(|enemy| {
+                let size = 10.;
+                let x = enemy.distance.0 * 10.;
+
+                painter.add(egui::Shape::circle_filled(
+                    Pos2::new(x, 400.),
+                    size * enemy.hp.current / enemy.hp.maximum,
+                    Color32::RED,
                 ));
             });
         });
