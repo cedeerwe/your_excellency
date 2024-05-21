@@ -89,6 +89,7 @@ impl GameState {
                 damage: self.enemy_spawner.damage,
                 speed: self.enemy_spawner.speed,
                 distance: Distance::start(),
+                is_hovered: false,
             })
         }
 
@@ -179,6 +180,7 @@ struct Enemy {
     damage: f32,
     speed: f32,
     distance: Distance,
+    is_hovered: bool,
 }
 
 impl Enemy {
@@ -188,6 +190,14 @@ impl Enemy {
             true => EnemyAfterTick::Normal,
             false => EnemyAfterTick::ReachedExcellency,
         }
+    }
+
+    pub fn x_coor(&self) -> f32 {
+        self.distance.0 * 10.
+    }
+
+    pub fn radius(&self) -> f32 {
+        10. * (self.hp.current / self.hp.maximum)
     }
 }
 
@@ -321,6 +331,9 @@ impl eframe::App for GameState {
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for enemy in self.enemies.iter() {
+                    if enemy.is_hovered {
+                        ui.label("HOVERED");
+                    }
                     ui.horizontal(|ui| {
                         ui.label("Distance:");
                         ui.add(enemy.distance.as_progress_bar());
@@ -429,18 +442,26 @@ impl eframe::App for GameState {
             });
 
             // TODO: Sense?
-            let (_, painter) = ui.allocate_painter(ui.available_size(), Sense::hover());
+            let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::hover());
 
             self.enemies.iter().for_each(|enemy| {
-                let size = 10.;
-                let x = enemy.distance.0 * 10.;
-
                 painter.add(egui::Shape::circle_filled(
-                    Pos2::new(x, 400.),
-                    size * enemy.hp.current / enemy.hp.maximum,
+                    Pos2::new(enemy.x_coor(), 400.),
+                    enemy.radius(),
                     Color32::RED,
                 ));
             });
+
+            if let Some(position) = response.hover_pos() {
+                self.enemies.iter_mut().for_each(|enemy| {
+                    let x = enemy.x_coor();
+                    let radius = enemy.radius();
+
+                    if position.x >= x - radius && position.x <= x + radius {
+                        enemy.is_hovered = true
+                    }
+                })
+            }
         });
 
         ctx.request_repaint_after(std::time::Duration::from_millis(16)) // ~60fps
